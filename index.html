@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ping Pong</title>
+  <title>Car Racer</title>
   <style>
     html, body {
       margin: 0;
@@ -29,9 +29,9 @@
   </style>
 </head>
 <body>
-  <h1>PING&nbsp;PONG</h1>
-  <canvas id="game" width="800" height="500"></canvas>
-  <p class="hint">Move your paddle with the <b>mouse</b> or <b>↑ / ↓</b> keys &nbsp;·&nbsp; First to <b>7</b> wins &nbsp;·&nbsp; Press <b>Space</b> to (re)start</p>
+  <h1>CAR&nbsp;RACER</h1>
+  <canvas id="game" width="400" height="600"></canvas>
+  <p class="hint">Dodge traffic with <b>← / →</b> or <b>A / D</b> &nbsp;·&nbsp; Press <b>Space</b> to (re)start</p>
 
   <script>
     const canvas = document.getElementById("game");
@@ -39,163 +39,214 @@
     const W = canvas.width;
     const H = canvas.height;
 
-    const PADDLE_W = 12;
-    const PADDLE_H = 90;
-    const BALL_R = 8;
-    const WIN_SCORE = 7;
+    const CAR_W = 40;
+    const CAR_H = 70;
+    const ROAD_W = 300;
+    const ROAD_LEFT = (W - ROAD_W) / 2;
+    const LANE_W = ROAD_W / 3;
+    const PLAYER_Y = H - 120;
+    const INITIAL_SPEED = 3;
+    const MAX_SPEED = 10;
+    const SPEED_INCREMENT = 0.001;
+    const SPAWN_INTERVAL_START = 90;
+    const SPAWN_INTERVAL_MIN = 30;
 
-    const player = { x: 20, y: H / 2 - PADDLE_H / 2, score: 0 };
-    const ai = { x: W - 20 - PADDLE_W, y: H / 2 - PADDLE_H / 2, score: 0 };
-    const ball = { x: W / 2, y: H / 2, vx: 0, vy: 0 };
+    const OBS_COLORS = ["#f87171", "#fbbf24", "#34d399", "#a78bfa", "#fb923c"];
 
-    let running = false;
-    let winner = null;
-
-    function resetBall(direction) {
-      ball.x = W / 2;
-      ball.y = H / 2;
-      const angle = (Math.random() * 0.5 - 0.25) * Math.PI; // -45..45 deg
-      const speed = 6;
-      ball.vx = direction * speed * Math.cos(angle);
-      ball.vy = speed * Math.sin(angle);
-    }
-
-    function startGame() {
-      player.score = 0;
-      ai.score = 0;
-      winner = null;
-      running = true;
-      resetBall(Math.random() < 0.5 ? -1 : 1);
-    }
-
-    // --- Controls ---
-    canvas.addEventListener("mousemove", (e) => {
-      const rect = canvas.getBoundingClientRect();
-      const my = (e.clientY - rect.top) * (H / rect.height);
-      player.y = Math.max(0, Math.min(H - PADDLE_H, my - PADDLE_H / 2));
-    });
-
+    let gameState = "start";
+    let player = { x: W / 2 - CAR_W / 2, y: PLAYER_Y };
+    let obstacles = [];
+    let score = 0;
+    let highScore = 0;
+    let speed = INITIAL_SPEED;
+    let roadOffset = 0;
+    let spawnTimer = 0;
+    let spawnInterval = SPAWN_INTERVAL_START;
     const keys = {};
-    document.addEventListener("keydown", (e) => {
-      keys[e.key] = true;
-      if (e.key === " ") {
-        if (!running) startGame();
-        e.preventDefault();
+
+    function resetGame() {
+      player.x = W / 2 - CAR_W / 2;
+      obstacles = [];
+      score = 0;
+      speed = INITIAL_SPEED;
+      roadOffset = 0;
+      spawnTimer = 0;
+      spawnInterval = SPAWN_INTERVAL_START;
+    }
+
+    function spawnObstacle() {
+      const availableLanes = [0, 1, 2].filter(lane => {
+        const laneX = ROAD_LEFT + lane * LANE_W + (LANE_W - CAR_W) / 2;
+        return !obstacles.some(o => o.y < 120 && Math.abs(o.x - laneX) < CAR_W);
+      });
+      if (availableLanes.length === 0) return;
+      const lane = availableLanes[Math.floor(Math.random() * availableLanes.length)];
+      const x = ROAD_LEFT + lane * LANE_W + (LANE_W - CAR_W) / 2;
+      const color = OBS_COLORS[Math.floor(Math.random() * OBS_COLORS.length)];
+      obstacles.push({ x, y: -CAR_H, color });
+    }
+
+    function checkCollision(a, b) {
+      return (
+        a.x + 4 < b.x + CAR_W - 4 &&
+        a.x + CAR_W - 4 > b.x + 4 &&
+        a.y + 4 < b.y + CAR_H - 4 &&
+        a.y + CAR_H - 4 > b.y + 4
+      );
+    }
+
+    function drawRoad() {
+      ctx.fillStyle = "#1a3a1a";
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = "#2a2a2a";
+      ctx.fillRect(ROAD_LEFT, 0, ROAD_W, H);
+
+      ctx.strokeStyle = "rgba(255,255,255,0.6)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(ROAD_LEFT, 0);
+      ctx.lineTo(ROAD_LEFT, H);
+      ctx.moveTo(ROAD_LEFT + ROAD_W, 0);
+      ctx.lineTo(ROAD_LEFT + ROAD_W, H);
+      ctx.stroke();
+
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([20, 20]);
+      for (let i = 1; i < 3; i++) {
+        const x = ROAD_LEFT + i * LANE_W;
+        ctx.beginPath();
+        ctx.lineDashOffset = -roadOffset;
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, H);
+        ctx.stroke();
       }
-    });
-    document.addEventListener("keyup", (e) => { keys[e.key] = false; });
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+    }
+
+    function drawCar(x, y, bodyColor, isPlayer) {
+      ctx.fillStyle = "#111";
+      ctx.fillRect(x + 2, y + 6, 8, 14);
+      ctx.fillRect(x + CAR_W - 10, y + 6, 8, 14);
+      ctx.fillRect(x + 2, y + CAR_H - 20, 8, 14);
+      ctx.fillRect(x + CAR_W - 10, y + CAR_H - 20, 8, 14);
+
+      ctx.fillStyle = bodyColor;
+      ctx.beginPath();
+      ctx.roundRect(x + 4, y, CAR_W - 8, CAR_H, 6);
+      ctx.fill();
+
+      if (isPlayer) {
+        ctx.fillStyle = "#1e3a5f";
+        ctx.fillRect(x + 10, y + 10, CAR_W - 20, 16);
+      } else {
+        ctx.fillStyle = "rgba(0,0,0,0.3)";
+        ctx.fillRect(x + 10, y + CAR_H - 26, CAR_W - 20, 16);
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillRect(x + 8, y + CAR_H - 4, 6, 4);
+        ctx.fillRect(x + CAR_W - 14, y + CAR_H - 4, 6, 4);
+      }
+    }
+
+    function drawHUD() {
+      ctx.fillStyle = "#e6edf3";
+      ctx.font = "20px system-ui, sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText("Score: " + score, W - 16, 30);
+      ctx.font = "14px system-ui, sans-serif";
+      ctx.fillStyle = "#8b98a9";
+      ctx.fillText("Best: " + highScore, W - 16, 50);
+      ctx.textAlign = "center";
+    }
+
+    function drawOverlay(lines) {
+      ctx.fillStyle = "rgba(11, 15, 26, 0.7)";
+      ctx.fillRect(0, 0, W, H);
+      ctx.textAlign = "center";
+      let y = H / 2 - (lines.length - 1) * 20;
+      for (const line of lines) {
+        ctx.fillStyle = line.color || "#e6edf3";
+        ctx.font = line.font || "20px system-ui, sans-serif";
+        ctx.fillText(line.text, W / 2, y);
+        y += line.gap || 40;
+      }
+    }
 
     function update() {
-      if (running) {
-        // keyboard paddle movement
-        if (keys["ArrowUp"]) player.y -= 7;
-        if (keys["ArrowDown"]) player.y += 7;
-        player.y = Math.max(0, Math.min(H - PADDLE_H, player.y));
+      if (gameState === "playing") {
+        if (keys["ArrowLeft"] || keys["a"]) player.x -= 5;
+        if (keys["ArrowRight"] || keys["d"]) player.x += 5;
+        player.x = Math.max(ROAD_LEFT + 4, Math.min(ROAD_LEFT + ROAD_W - CAR_W - 4, player.x));
 
-        // move ball
-        ball.x += ball.vx;
-        ball.y += ball.vy;
+        roadOffset += speed;
+        speed = Math.min(MAX_SPEED, speed + SPEED_INCREMENT);
 
-        // top / bottom walls
-        if (ball.y - BALL_R < 0 && ball.vy < 0) ball.vy *= -1;
-        if (ball.y + BALL_R > H && ball.vy > 0) ball.vy *= -1;
-
-        // paddle collisions
-        if (
-          ball.vx < 0 &&
-          ball.x - BALL_R < player.x + PADDLE_W &&
-          ball.x - BALL_R > player.x &&
-          ball.y > player.y &&
-          ball.y < player.y + PADDLE_H
-        ) {
-          ball.vx *= -1.06;
-          ball.vy += ((ball.y - (player.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 3;
-        }
-        if (
-          ball.vx > 0 &&
-          ball.x + BALL_R > ai.x &&
-          ball.x + BALL_R < ai.x + PADDLE_W &&
-          ball.y > ai.y &&
-          ball.y < ai.y + PADDLE_H
-        ) {
-          ball.vx *= -1.06;
-          ball.vy += ((ball.y - (ai.y + PADDLE_H / 2)) / (PADDLE_H / 2)) * 3;
+        spawnTimer++;
+        if (spawnTimer >= spawnInterval) {
+          spawnObstacle();
+          spawnTimer = 0;
+          spawnInterval = Math.max(SPAWN_INTERVAL_MIN, spawnInterval - 0.5);
         }
 
-        // simple AI: track the ball with a speed cap
-        const aiCenter = ai.y + PADDLE_H / 2;
-        if (aiCenter < ball.y - 12) ai.y += 5;
-        else if (aiCenter > ball.y + 12) ai.y -= 5;
-        ai.y = Math.max(0, Math.min(H - PADDLE_H, ai.y));
-
-        // scoring
-        if (ball.x < 0) {
-          ai.score++;
-          checkWinOrServe(1);
-        } else if (ball.x > W) {
-          player.score++;
-          checkWinOrServe(-1);
+        for (const o of obstacles) {
+          o.y += speed * 0.7;
         }
+        obstacles = obstacles.filter(o => o.y < H + CAR_H);
+
+        for (const o of obstacles) {
+          if (checkCollision(player, o)) {
+            gameState = "gameover";
+            highScore = Math.max(highScore, score);
+            break;
+          }
+        }
+
+        if (gameState === "playing") score++;
       }
+
       draw();
       requestAnimationFrame(update);
     }
 
-    function checkWinOrServe(direction) {
-      if (player.score >= WIN_SCORE || ai.score >= WIN_SCORE) {
-        running = false;
-        winner = player.score > ai.score ? "YOU WIN!" : "AI WINS!";
-      } else {
-        resetBall(direction);
-      }
-    }
-
     function draw() {
-      // court
-      ctx.fillStyle = "#111827";
-      ctx.fillRect(0, 0, W, H);
+      drawRoad();
 
-      // center dashed line
-      ctx.strokeStyle = "#374151";
-      ctx.lineWidth = 3;
-      ctx.setLineDash([12, 16]);
-      ctx.beginPath();
-      ctx.moveTo(W / 2, 0);
-      ctx.lineTo(W / 2, H);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      for (const o of obstacles) {
+        drawCar(o.x, o.y, o.color, false);
+      }
 
-      // paddles
-      ctx.fillStyle = "#60a5fa";
-      ctx.fillRect(player.x, player.y, PADDLE_W, PADDLE_H);
-      ctx.fillStyle = "#f87171";
-      ctx.fillRect(ai.x, ai.y, PADDLE_W, PADDLE_H);
+      drawCar(player.x, player.y, "#60a5fa", true);
 
-      // ball
-      ctx.fillStyle = "#e6edf3";
-      ctx.beginPath();
-      ctx.arc(ball.x, ball.y, BALL_R, 0, Math.PI * 2);
-      ctx.fill();
-
-      // scores
-      ctx.fillStyle = "#e6edf3";
-      ctx.font = "48px system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(player.score, W / 2 - 60, 60);
-      ctx.fillText(ai.score, W / 2 + 60, 60);
-
-      // overlay messages
-      if (!running) {
-        ctx.fillStyle = "rgba(11, 15, 26, 0.7)";
-        ctx.fillRect(0, 0, W, H);
-        ctx.fillStyle = "#e6edf3";
-        ctx.font = "36px system-ui, sans-serif";
-        ctx.fillText(winner || "PING PONG", W / 2, H / 2 - 10);
-        ctx.font = "20px system-ui, sans-serif";
-        ctx.fillStyle = "#8b98a9";
-        ctx.fillText("Press SPACE to start", W / 2, H / 2 + 30);
+      if (gameState === "playing") {
+        drawHUD();
+      } else if (gameState === "start") {
+        drawOverlay([
+          { text: "CAR RACER", font: "36px system-ui, sans-serif" },
+          { text: "Press SPACE to start", color: "#8b98a9" }
+        ]);
+      } else if (gameState === "gameover") {
+        drawOverlay([
+          { text: "GAME OVER", font: "36px system-ui, sans-serif" },
+          { text: "Score: " + score },
+          { text: "Best: " + highScore, color: "#8b98a9" },
+          { text: "Press SPACE to restart", color: "#8b98a9" }
+        ]);
       }
     }
+
+    document.addEventListener("keydown", (e) => {
+      keys[e.key] = true;
+      if (e.key === " ") {
+        if (gameState !== "playing") {
+          resetGame();
+          gameState = "playing";
+        }
+        e.preventDefault();
+      }
+    });
+    document.addEventListener("keyup", (e) => { keys[e.key] = false; });
 
     draw();
     requestAnimationFrame(update);

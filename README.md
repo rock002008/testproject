@@ -1,14 +1,13 @@
-# Ping Pong
+# Car Racer
 
-A simple browser-based Pong game built with HTML5 Canvas — no dependencies.
+A simple browser-based car racing game built with HTML5 Canvas — no dependencies.
 
 ## How to play
 
 Open `index.html` in any web browser.
 
-- Move your paddle (blue, left) with the **mouse** or the **↑ / ↓** arrow keys
+- Dodge oncoming traffic by moving your car (blue) with **← / →** or **A / D**
 - Press **Space** to start or restart
-- First to **7** points wins
+- Score increases the longer you survive — speed ramps up over time
 
 That's it — enjoy!
-This is a new branch
